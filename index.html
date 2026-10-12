@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JARVIS</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000814;color:#00d4ff;font-family:sans-serif;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+h1{text-align:center;letter-spacing:6px;padding:15px;font-size:20px}
+#out{flex:1;padding:15px;overflow-y:auto;font-size:14px;line-height:1.5}
+.msg{margin:6px 0;padding:10px 14px;border-radius:14px;max-width:85%}
+.u{background:#0088cc;color:#fff;margin-left:auto}
+.j{background:rgba(0,212,255,.15);border:1px solid rgba(0,212,255,.3)}
+#btn{width:180px;padding:18px;margin:15px auto;border:2px solid #00d4ff;background:transparent;color:#00d4ff;font-size:16px;letter-spacing:3px;border-radius:40px;cursor:pointer;font-weight:bold}
+#btn.on{background:#00ff88;color:#000;border-color:#00ff88}
+</style>
+</head>
+<body>
+<h1>J.A.R.V.I.S</h1>
+<div id="out"></div>
+<button id="btn">TAP TO SPEAK</button>
+
+<script>
+var API_KEY="AQ.Ab8RN6Ih2Ikye0L8MO6kqarfjaz1YxrWO7QrG2NAVIwram1o_w";
+var out=document.getElementById('out');
+var btn=document.getElementById('btn');
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+var synth=window.speechSynthesis;
+var rec=null,listening=false;
+
+function add(s,t){
+  var d=document.createElement('div');
+  d.className='msg '+s;
+  d.textContent=t;
+  out.appendChild(d);
+  out.scrollTop=out.scrollHeight;
+}
+
+function speak(t){
+  if(!synth)return;
+  synth.cancel();
+  var u=new SpeechSynthesisUtterance(t);
+  u.lang='en-GB';
+  u.rate=1;
+  u.pitch=0.9;
+  synth.speak(u);
+}
+
+function reply(t){
+  add('j',t);
+  speak(t);
+}
+
+function handle(input){
+  add('u',input);
+  var q=input.toLowerCase().trim();
+  
+  if(/hello|hi|hey/.test(q)){reply('Hello sir. JARVIS here.');return;}
+  if(/time/.test(q)){reply('Time is '+new Date().toLocaleTimeString());return;}
+  if(/date|today/.test(q)){reply('Today is '+new Date().toLocaleDateString());return;}
+  if(/open youtube/.test(q)){window.open('https://youtube.com');reply('Opening YouTube sir.');return;}
+  if(/open google/.test(q)){window.open('https://google.com');reply('Opening Google sir.');return;}
+  if(/joke/.test(q)){reply('Why did the AI cross the road? To optimize the other side sir.');return;}
+  if(/thank/.test(q)){reply('Welcome sir.');return;}
+  
+  askAI(input);
+}
+
+function askAI(input){
+  add('j','...');
+  var url='https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+API_KEY;
+  
+  fetch(url,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      contents:[{role:'user',parts:[{text:input}]}],
+      systemInstruction:{parts:[{text:'You are JARVIS. Address user as sir. Be brief, under 2 sentences.'}]}
+    })
+  })
+  .then(function(r){return r.json();})
+  .then(function(d){
+    if(out.lastChild)out.removeChild(out.lastChild);
+    if(d.error){
+      reply('Error: '+d.error.message);
+      return;
+    }
+    if(d.candidates&&d.candidates[0]){
+      var t=d.candidates[0].content.parts[0].text;
+      reply(t);
+    }else{
+      reply('No response sir.');
+    }
+  })
+  .catch(function(e){
+    if(out.lastChild)out.removeChild(out.lastChild);
+    reply('Network error sir.');
+  });
+}
+
+if(!SR){
+  add('j','Speech Recognition not supported. Use Chrome browser.');
+}else{
+  rec=new SR();
+  rec.lang='en-US';
+  rec.continuous=false;
+  rec.interimResults=false;
+  
+  rec.onstart=function(){
+    listening=true;
+    btn.classList.add('on');
+    btn.textContent='LISTENING...';
+  };
+  
+  rec.onresult=function(e){
+    var t=e.results[0][0].transcript;
+    handle(t);
+  };
+  
+  rec.onend=function(){
+    listening=false;
+    btn.classList.remove('on');
+    btn.textContent='TAP TO SPEAK';
+  };
+  
+  rec.onerror=function(e){
+    add('j','Mic error: '+e.error);
+    listening=false;
+    btn.classList.remove('on');
+    btn.textContent='TAP TO SPEAK';
+  };
+}
+
+btn.onclick=function(){
+  if(!rec){add('j','Speech not supported.');return;}
+  if(listening){rec.stop();return;}
+  try{rec.start();}catch(e){add('j','Error: '+e.message);}
+};
+
+add('j','JARVIS ready. Tap button and speak.');
+</script>
+</body>
+</html>
