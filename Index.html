@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MAYA - JARVIS AI HUD</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<!-- MediaPipe for Hand Gesture -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600;700&display=swap');
+
+:root {
+    --primary: #ff0000;
+    --bg: #050505;
+    --text: #ffcccc;
+    --glow: 0 0 20px rgba(255, 0, 0, 0.6);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html, body { height: 100%; height: 100dvh; overflow: hidden; }
+body { font-family: 'Rajdhani', sans-serif; background-color: var(--bg); background-image: radial-gradient(circle at 50% 50%, rgba(255,0,0,0.15) 0%, transparent 60%), linear-gradient(rgba(255,0,0,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,0,0,0.05) 1px, transparent 1px); background-size: 100% 100%, 30px 30px, 30px 30px; color: var(--text); display: flex; flex-direction: column; }
+
+/* Header */
+header{display:flex;align-items:center;justify-content:space-between;padding:15px;background:rgba(0,0,0,0.8);border-bottom:1px solid var(--primary);z-index:10;box-shadow:var(--glow)}
+.title{font-family: 'Orbitron', sans-serif;font-size:1.3rem;font-weight:bold;letter-spacing:5px;color:var(--primary);text-shadow:var(--glow)}
+.icon{font-size:24px;cursor:pointer;color:var(--primary);padding:5px;text-shadow:var(--glow)}
+
+/* Chat Area */
+#chatArea{flex:1;padding:15px;overflow-y:auto;display:flex;flex-direction:column;gap:15px;z-index:5;}
+.message{padding:12px 16px;border-radius:10px;font-size:0.95rem;max-width:90%;line-height:1.5;word-wrap:break-word;}
+.user-msg{align-self:flex-end;background:#550000;color:#fff;border-bottom-right-radius:2px;border:1px solid #ff0000;}
+.jarvis-msg{align-self:flex-start;background:rgba(20,0,0,0.8);color:var(--text);border:1px solid var(--primary);border-bottom-left-radius:2px;box-shadow:var(--glow);}
+.jarvis-msg::before{content:'◈ MAYA: ';color:var(--primary);font-weight:bold;font-size: 0.8rem; display: block; margin-bottom: 5px;}
+.jarvis-msg pre { background: #000; padding: 10px; border-radius: 5px; overflow-x: auto; border: 1px solid #333; margin-top: 8px;}
+.jarvis-msg code { font-family: monospace; color: #00ff88; }
+
+/* Maya Red Core Container */
+#coreContainer {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 250px; height: 250px; display: flex; justify-content: center; align-items: center;
+    z-index: 1; transition: all 0.5s ease; opacity: 0.7;
+}
+#coreContainer.active { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+.orb-ring { position: absolute; border-radius: 50%; border: 2px solid rgba(255,0,0,0.4); box-shadow: 0 0 15px rgba(255,0,0,0.5); }
+.ring-1 { width: 100%; height: 100%; border-style: dashed; animation: rotate 20s linear infinite; }
+.ring-2 { width: 75%; height: 75%; border-color: #ff0000; animation: rotate 10s linear infinite reverse; }
+.ring-3 { width: 50%; height: 50%; border-width: 4px; border-color: rgba(255,0,0,0.8); animation: rotate 15s linear infinite; }
+.orb-core { width: 30%; height: 30%; background: radial-gradient(circle, #ff0000, #660000); border-radius: 50%; box-shadow: 0 0 40px #ff0000, 0 0 80px #ff0000, inset 0 0 30px #fff; animation: pulse 1.5s ease-in-out infinite; }
+@keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes pulse { 0%, 100% { opacity: 0.8; transform: scale(1); } 50% { opacity: 1; transform: scale(1.1); } }
+
+/* Input Area */
+.input-area{display:flex;align-items:center;background:#000;padding:10px;border-top:1px solid var(--primary);gap:8px;z-index:10;}
+input[type="text"]{flex:1;background:rgba(255,0,0,0.1);border:1px solid var(--primary);border-radius:5px;padding:12px;color:#fff;font-size:1rem;outline:none;}
+.send-btn{background:var(--primary);border:none;border-radius:50%;width:45px;height:45px;color:#000;font-size:1.2rem;font-weight:bold;cursor:pointer;box-shadow:var(--glow);}
+#statusText {text-align:center; font-size:0.75rem; color:var(--primary); padding:5px; text-transform:uppercase; letter-spacing:1px; background:#000;}
+
+/* Hidden Camera/Video */
+#videoElement, #gestureCanvas { display: none; }
+
+/* Start Overlay */
+#startOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 999; display: flex; flex-direction: column; justify-content: center; align-items: center; color: var(--primary); text-align: center; padding: 20px; }
+#startBtn { padding: 15px 40px; background: var(--primary); color: black; border: none; border-radius: 5px; font-size: 1.2rem; font-weight: bold; margin-top: 20px; cursor: pointer; box-shadow: var(--glow); }
+</style>
+</head>
+<body>
+
+<!-- Start Overlay -->
+<div id="startOverlay">
+    <h1 style="font-family: 'Orbitron'; font-size: 2rem; letter-spacing: 5px; text-shadow: var(--glow);">MAYA SYSTEM</h1>
+    <p style="margin-top: 10px; color: #ff8888;">Tap to initialize sensors (Mic & Camera)</p>
+    <button id="startBtn">ACTIVATE</button>
+</div>
+
+<header>
+    <div class="icon" onclick="document.getElementById('settingsModal').style.display='flex'">⚙️</div>
+    <div class="title">M.A.Y.A</div>
+    <div class="icon" onclick="clearChat()">🗑️</div>
+</header>
+
+<!-- Red Core -->
+<div id="coreContainer">
+    <div class="orb-ring ring-1"></div>
+    <div class="orb-ring ring-2"></div>
+    <div class="orb-ring ring-3"></div>
+    <div class="orb-core"></div>
+</div>
+
+<div id="chatArea">
+    <div class="message jarvis-msg">Sensors initialized. Clap twice or show an open palm to wake me up, sir.</div>
+</div>
+
+<div id="statusText">STANDBY: Clap 2x or Hand Gesture...</div>
+
+<div class="input-area">
+    <input type="text" id="userInput" placeholder="Or type here...">
+    <button class="send-btn" id="sendBtn">➤</button>
+</div>
+
+<!-- Settings Modal -->
+<div id="settingsModal" style="position:fixed;inset:0;background:rgba(0,0,0,0.9);display:none;justify-content:center;align-items:center;z-index:200;">
+    <div style="background:#0a0000;padding:20px;border-radius:10px;border:1px solid var(--primary);width:90%;max-width:400px;">
+        <h3 style="color:var(--primary);margin-bottom:15px;text-align:center;font-family:'Orbitron';">SETTINGS</h3>
+        <label style="color:#ccc; font-size:0.8rem;">Gemini API Key</label>
+        <input type="password" id="apiKeyInput" style="width:100%;padding:12px;background:rgba(255,0,0,0.1);border:1px solid var(--primary);color:white;margin-bottom:15px;border-radius:5px;outline:none;">
+        <button onclick="saveSettings()" style="width:100%;padding:12px;background:var(--primary);color:black;border:none;border-radius:5px;font-weight:bold;cursor:pointer;">Save & Close</button>
+    </div>
+</div>
+
+<video id="videoElement" autoplay playsinline></video>
+
+<script>
+var API_KEY = localStorage.getItem('maya_api_key') || ""; 
+document.getElementById('apiKeyInput').value = API_KEY;
+
+var chatArea = document.getElementById('chatArea');
+var userInput = document.getElementById('userInput');
+var sendBtn = document.getElementById('sendBtn');
+var statusText = document.getElementById('statusText');
+var coreContainer = document.getElementById('coreContainer');
+
+var synth = window.speechSynthesis;
+var isAwake = false;
+var isProcessing = false;
+
+// ==== VOICE ENGINE ====
+function speak(text) {
+    if(!synth) return;
+    synth.cancel();
+    var u = new SpeechSynthesisUtterance(text.replace(/[*#`_]/g, ''));
+    u.lang = 'en-GB'; u.rate = 0.95; u.pitch = 0.8; // British Maya Voice
+    synth.speak(u);
+}
+
+function saveSettings() {
+    API_KEY = document.getElementById('apiKeyInput').value.trim();
+    localStorage.setItem('maya_api_key', API_KEY);
+    document.getElementById('settingsModal').style.display = 'none';
+    speak("Settings saved.");
+}
+
+function clearChat() { chatArea.innerHTML = '<div class="message jarvis-msg">Memory cleared.</div>'; }
+
+function addMsg(sender, text, isMarkdown = false) {
+    var m = document.createElement('div');
+    m.className = 'message ' + (sender === 'user' ? 'user-msg' : 'jarvis-msg');
+    if(isMarkdown) m.innerHTML = marked.parse(text); else m.textContent = text;
+    chatArea.appendChild(m);
+    chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+// ==== WAKE UP LOGIC ====
+function wakeUpJarvis(reason) {
+    if(isAwake) return;
+    isAwake = true;
+    coreContainer.classList.add('active');
+    statusText.textContent = "ACTIVE: Listening...";
+    addMsg('jarvis', `System awakened by ${reason}. Yes sir, how can I help?`);
+    speak("Yes sir, I am listening.");
+    
+    // Auto sleep after 15 seconds of inactivity
+    clearTimeout(window.sleepTimer);
+    window.sleepTimer = setTimeout(sleepJarvis, 15000);
+}
+
+function sleepJarvis() {
+    isAwake = false;
+    coreContainer.classList.remove('active');
+    statusText.textContent = "STANDBY: Clap 2x or Hand Gesture...";
+}
+
+// ==== 1. CLAP DETECTION (Web Audio API) ====
+var audioContext, analyser, dataArray;
+var clapCount = 0, lastClapTime = 0;
+
+function initClapDetection(stream) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    var source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+    analyser.fftSize = 256;
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    function detectClap() {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+        let average = sum / dataArray.length;
+
+        // Threshold for Clap (adjust if needed)
+        if (average > 100) { 
+            let now = Date.now();
+            if (now - lastClapTime < 1000) { 
+                clapCount++;
+                if (clapCount === 2) {
+                    wakeUpJarvis("Double Clap");
+                    clapCount = 0;
+                }
+            } else {
+                clapCount = 1;
+            }
+            lastClapTime = now;
+        }
+        requestAnimationFrame(detectClap);
+    }
+    detectClap();
+}
+
+// ==== 2. HAND GESTURE DETECTION (MediaPipe) ====
+const videoElement = document.getElementById('videoElement');
+let hands = null;
+
+function initHandGesture() {
+    hands = new Hands({locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+    hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 0,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.6
+    });
+    hands.onResults(onHandResults);
+    
+    const camera = new Camera(videoElement, {
+        onFrame: async () => { await hands.send({image: videoElement}); },
+        width: 320,
+        height: 240
+    });
+    camera.start();
+}
+
+function onHandResults(results) {
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        // Simple gesture: If hand detected, check if open palm
+        const landmarks = results.multiHandLandmarks[0];
+        // Logic: Check distance between thumb tip (4) and pinky tip (20)
+        const dx = landmarks[4].x - landmarks[20].x;
+        const dy = landmarks[4].y - landmarks[20].y;
+        const distance = Math.sqrt(dx*dx + dy*dy);
+        
+        // If distance is large, hand is open
+        if (distance > 0.15) { 
+            wakeUpJarvis("Hand Gesture");
+        }
+    }
+}
+
+// ==== 3. AI CHAT LOGIC ====
+function askAI(input) {
+    if(API_KEY === "") {
+        addMsg('jarvis', 'Sir, API Key missing in settings.');
+        speak("API Key missing."); return;
+    }
+    
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
+    var sysPrompt = "You are MAYA/JARVIS. Speak in British butler tone. Address user as Sir. Be witty and concise.";
+
+    addMsg('jarvis', 'Processing...');
+    
+    fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': API_KEY },
+        body: JSON.stringify({ 
+            contents: [{ role: 'user', parts: [{ text: input }] }], 
+            systemInstruction: { parts: [{ text: sysPrompt }] } 
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        chatArea.removeChild(chatArea.lastChild); // Remove Processing
+        if (data.error) { addMsg('jarvis', 'Error: ' + data.error.message); return; }
+        var txt = data.candidates[0].content.parts[0].text;
+        addMsg('jarvis', txt, true); 
+        speak(txt);
+        clearTimeout(window.sleepTimer);
+        window.sleepTimer = setTimeout(sleepJarvis, 15000); // Reset timer
+    })
+    .catch(err => { addMsg('jarvis', 'Network Error!'); });
+}
+
+// Send Button
+sendBtn.addEventListener('click', function() {
+    var text = userInput.value.trim();
+    if (text !== '') {
+        addMsg('user', text);
+        askAI(text);
+        userInput.value = '';
+    }
+});
+userInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') sendBtn.click();
+});
+
+// ==== INITIALIZATION ====
+document.getElementById('startBtn').addEventListener('click', async function() {
+    this.style.display = 'none';
+    document.getElementById('startOverlay').style.display = 'none';
+    
+    try {
+        // Get Mic for Clap Detection
+        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        initClapDetection(audioStream);
+        
+        // Get Camera for Hand Gesture
+        const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        videoElement.srcObject = videoStream;
+        
+        // Start MediaPipe
+        initHandGesture();
+        
+        statusText.textContent = "Sensors Active. Clap 2x or show Palm.";
+        speak("Maya sensors active.");
+    } catch (err) {
+        statusText.textContent = "Permission Denied for Mic/Camera!";
+        alert("Bhai, please allow Microphone and Camera permissions.");
+    }
+});
+</script>
+</body>
+  </html>
